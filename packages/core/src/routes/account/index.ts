@@ -29,6 +29,7 @@ import mfaVerificationsRoutes from './mfa-verifications.js';
 import koaAccountCenter from './middlewares/koa-account-center.js';
 import accountSessionRoutes from './sessions.js';
 import thirdPartyTokensRoutes from './third-party-tokens.js';
+import accountUserAssetsRoutes from './user-assets.js';
 import { getAccountCenterFilteredProfile, getScopedProfile } from './utils/get-scoped-profile.js';
 
 export default function accountRoutes<T extends UserRouter>(...args: RouterInitArgs<T>) {
@@ -293,4 +294,5 @@ export default function accountRoutes<T extends UserRouter>(...args: RouterInitA
   mfaVerificationsRoutes(...args);
   accountSessionRoutes(...args);
   accountGrantRoutes(...args);
+  accountUserAssetsRoutes(...args);
 }
