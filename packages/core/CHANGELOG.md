@@ -1,5 +1,19 @@
 # Change Log
 
+## 1.39.1
+
+### Patch Changes
+
+- a27d813097: allow users who have no password, no primary email, and no primary phone to set their initial password without a verification record through Account API
+- Updated dependencies [2ae0a420f7]
+  - @logto/account@0.4.1
+  - @logto/cli@1.39.1
+  - @logto/schemas@1.39.1
+  - @logto/console@1.36.0
+  - @logto/demo-app@1.5.0
+  - @logto/device-demo-app@0.1.0
+  - @logto/experience@1.19.1
+
 ## 1.39.0
 
 ### Minor Changes

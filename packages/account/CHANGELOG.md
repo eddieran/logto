@@ -1,5 +1,13 @@
 # @logto/account
 
+## 0.4.1
+
+### Patch Changes
+
+- 2ae0a420f7: fix social linking callback in Account Center to preserve connector id
+
+  Render the callback through React Router so `useParams()` can correctly read the `connectorId` from the URL and avoid incorrectly showing "social sign-in method is not enabled"
+
 ## 0.4.0
 
 ### Minor Changes
