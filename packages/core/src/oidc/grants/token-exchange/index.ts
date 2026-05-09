@@ -74,6 +74,10 @@ export const buildHandler: (
     scopes: oidcScopes,
   } = providerInstance.configuration();
 
+  // Confused-deputy guard (RFC 8693 §4.4): the subject access token must be
+  // bound to the calling client. Without this, any client with
+  // `allowTokenExchange=true` could exchange tokens issued for unrelated
+  // resources.
   const { userId, subjectTokenId } = await validateSubjectToken({
     queries,
     subjectToken: String(params.subject_token),
@@ -83,6 +87,7 @@ export const buildHandler: (
       localJWKSet: envSet.oidc.localJWKSet,
       issuer: envSet.oidc.issuer,
     },
+    expectedAudience: client.clientId,
   });
 
   const account = await Account.findAccount(ctx, userId);

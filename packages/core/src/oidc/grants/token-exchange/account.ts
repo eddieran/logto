@@ -23,6 +23,14 @@ type ValidateSubjectTokenParams = {
     ) => Promise<KeyLike | Uint8Array>;
     issuer: string;
   };
+  /**
+   * The audience(s) expected on the subject token (`aud` claim) to prevent
+   * cross-resource confused-deputy attacks. Required for JWT and opaque
+   * access-token validation. Pass the requesting client_id at minimum, and any
+   * additional audiences the client is explicitly authorized to receive
+   * impersonations from.
+   */
+  expectedAudience: string | string[];
 };
 
 /**
@@ -47,15 +55,25 @@ const validateImpersonationToken = async (
 /**
  * Validates a JWT access token using the issuer's JWK set.
  * JWT access tokens can be exchanged multiple times (not consumption-tracked).
+ *
+ * The `aud` claim of the subject token MUST be bound to the calling client to
+ * prevent confused-deputy / cross-resource token exchange (RFC 8693 §4.4).
+ * The caller passes `expectedAudience` (typically the requesting client_id and
+ * any audiences the client is explicitly authorized to receive impersonations
+ * from). When `expectedAudience` is omitted, exchanges are rejected.
  */
 const validateJwtAccessToken = async (
   subjectToken: string,
-  jwtVerificationOptions: NonNullable<ValidateSubjectTokenParams['jwtVerificationOptions']>
+  jwtVerificationOptions: NonNullable<ValidateSubjectTokenParams['jwtVerificationOptions']>,
+  expectedAudience: string | string[]
 ): Promise<{ userId: string }> => {
   const { localJWKSet, issuer } = jwtVerificationOptions;
 
   try {
-    const { payload } = await jwtVerify(subjectToken, localJWKSet, { issuer });
+    const { payload } = await jwtVerify(subjectToken, localJWKSet, {
+      issuer,
+      audience: expectedAudience,
+    });
     assertThat(payload.sub, new InvalidGrant('subject token does not contain a valid `sub` claim'));
 
     // JWT access tokens are not consumption-tracked, so no subjectTokenId is returned.
@@ -72,10 +90,14 @@ const validateJwtAccessToken = async (
 /**
  * Validates an opaque access token by looking it up via oidc-provider's AccessToken.find.
  * Opaque access tokens can be exchanged multiple times (not consumption-tracked).
+ *
+ * The token's `aud` MUST be checked against `expectedAudience` to prevent
+ * confused-deputy / cross-resource token exchange (RFC 8693 §4.4).
  */
 const validateOpaqueAccessToken = async (
   subjectToken: string,
-  AccessToken: Provider['AccessToken']
+  AccessToken: Provider['AccessToken'],
+  expectedAudience: string | string[]
 ): Promise<{ userId: string } | undefined> => {
   // eslint-disable-next-line unicorn/no-array-callback-reference -- AccessToken.find is not an array method
   const token = await trySafe(async () => AccessToken.find(subjectToken));
@@ -86,6 +108,21 @@ const validateOpaqueAccessToken = async (
   // Check if the token is expired
   if (token.isExpired) {
     throw new InvalidGrant('subject token is expired');
+  }
+
+  // Confused-deputy guard: subject token must be addressed to one of the
+  // expected audiences (typically the requesting client). Without this check,
+  // any client with `allowTokenExchange=true` can trade tokens issued for
+  // unrelated resources into tokens for itself.
+  const tokenAudience = (token as unknown as { aud?: string | string[] }).aud;
+  const expected = Array.isArray(expectedAudience) ? expectedAudience : [expectedAudience];
+  const tokenAudiences = Array.isArray(tokenAudience)
+    ? tokenAudience
+    : tokenAudience === undefined
+      ? []
+      : [tokenAudience];
+  if (!tokenAudiences.some((aud) => expected.includes(aud))) {
+    throw new InvalidGrant('subject token audience does not match the requesting client');
   }
 
   // Opaque access tokens are not consumption-tracked, so no subjectTokenId is returned.
@@ -102,6 +139,7 @@ export const validateSubjectToken = async ({
   subjectTokenType,
   AccessToken,
   jwtVerificationOptions,
+  expectedAudience,
 }: ValidateSubjectTokenParams): Promise<{ userId: string; subjectTokenId?: string }> => {
   const {
     subjectTokens: { findSubjectToken },
@@ -121,14 +159,18 @@ export const validateSubjectToken = async ({
     }
 
     // First, try to find the token as an opaque access token
-    const opaqueResult = await validateOpaqueAccessToken(subjectToken, AccessToken);
+    const opaqueResult = await validateOpaqueAccessToken(
+      subjectToken,
+      AccessToken,
+      expectedAudience
+    );
     if (opaqueResult) {
       return opaqueResult;
     }
 
     // If not found as opaque token, try to verify as JWT
     assertThat(jwtVerificationOptions, new InvalidGrant('JWT verification options are required'));
-    return validateJwtAccessToken(subjectToken, jwtVerificationOptions);
+    return validateJwtAccessToken(subjectToken, jwtVerificationOptions, expectedAudience);
   }
 
   if (subjectTokenType === TokenExchangeTokenType.PersonalAccessToken) {
